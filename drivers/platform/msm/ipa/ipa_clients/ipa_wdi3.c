@@ -1159,6 +1159,7 @@ int ipa_wdi_opt_dpath_register_flt_cb_per_inst_v2(
 	ipa_wdi_opt_dpath_clk_status_cb clk_cb)
 {
 	int ret = 0;
+	int i;
 
 	if (hdl < 0 || hdl >= IPA_WDI_INST_MAX) {
 		IPA_WDI_ERR("Invalid Handle %d\n", hdl);
@@ -1177,7 +1178,7 @@ int ipa_wdi_opt_dpath_register_flt_cb_per_inst_v2(
 	opt_dpath_info[hdl].ctrl_flt_add_cb = ctrl_flt_add_cb;
 	opt_dpath_info[hdl].ctrl_flt_rem_cb = ctrl_flt_rem_cb;
 	opt_dpath_info[hdl].clk_cb = clk_cb;
-	for(int i = 0; i<IPA_WDI_MAX_TX_FILTER; i++) {
+	for (i = 0; i < IPA_WDI_MAX_TX_FILTER; i++) {
 		opt_dpath_info[hdl].ctrl_flt[i].hdl = 0;
 		opt_dpath_info[hdl].ctrl_flt[i].index = 0;
 	}

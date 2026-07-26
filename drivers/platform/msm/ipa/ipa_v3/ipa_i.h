@@ -48,6 +48,8 @@
 #define IPA_DEV_NAME_MAX_LEN 15
 #define DRV_NAME "ipa"
 
+struct ipa_ep_cfg_prod_cfg;
+
 #define IPA_v4_USB0_EP_ID		11
 #define IPA_v4_USB1_EP_ID		12
 
@@ -3457,7 +3459,6 @@ int ipa3_tag_process(struct ipa3_desc *desc, int num_descs,
 
 int ipa3_usb_init(void);
 void ipa3_usb_exit(void);
-int ipa3_usb_register_ready_cb(void);
 
 void ipa3_q6_pre_shutdown_cleanup(void);
 void ipa3_q6_post_shutdown_cleanup(void);

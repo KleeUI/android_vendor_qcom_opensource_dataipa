@@ -11,6 +11,7 @@
 #include <linux/debugfs.h>
 #include "ipa.h"
 #include <linux/ipa_usb.h>
+#include <linux/ipa_fmwk.h>
 #include "rndis_ipa.h"
 #include "ecm_ipa.h"
 #include "ipa_i.h"
@@ -2680,22 +2681,13 @@ bool ipa_usb_is_teth_prot_connected(enum ipa_usb_teth_prot usb_teth_prot)
 }
 EXPORT_SYMBOL(ipa_usb_is_teth_prot_connected);
 
-static struct ipa_usb_ops usb_ops = {
-	ipa_usb_init_teth_prot,
-	ipa_usb_xdci_connect,
-	ipa_usb_xdci_disconnect,
-	ipa_usb_deinit_teth_prot,
-	ipa_usb_xdci_suspend,
-	ipa_usb_xdci_resume,
-	ipa_usb_is_teth_prot_connected,
-};
-
 int ipa3_usb_init(void)
 {
 	int i;
 	unsigned long flags;
 	int res;
 	struct ipa3_usb_pm_context *pm_ctx;
+	struct ipa_usb_data funcs;
 
 	pr_info("ipa_usb driver init\n");
 
@@ -2745,9 +2737,17 @@ int ipa3_usb_init(void)
 
 	ipa_usb_debugfs_init();
 
-	res = ipa3_usb_register_ready_cb();
-	if (res < 0)
-		goto ipa_usb_workqueue_fail;
+	funcs.ipa_usb_init_teth_prot = ipa_usb_init_teth_prot;
+	funcs.ipa_usb_xdci_connect = ipa_usb_xdci_connect;
+	funcs.ipa_usb_xdci_disconnect = ipa_usb_xdci_disconnect;
+	funcs.ipa_usb_deinit_teth_prot = ipa_usb_deinit_teth_prot;
+	funcs.ipa_usb_xdci_suspend = ipa_usb_xdci_suspend;
+	funcs.ipa_usb_xdci_resume = ipa_usb_xdci_resume;
+	funcs.ipa_usb_is_teth_prot_connected =
+		ipa_usb_is_teth_prot_connected;
+	res = ipa_fmwk_register_ipa_usb(&funcs);
+	if (res)
+		pr_err("failed to register ipa_usb APIs: %d\n", res);
 
 	pr_info("exit: IPA_USB init success!\n");
 
@@ -2776,16 +2776,4 @@ void ipa3_usb_exit(void)
 #endif
 	ipa_usb_debugfs_remove();
 	kfree(ipa3_usb_ctx);
-}
-
-int ipa3_usb_register_ready_cb(void)
-{
-	int res;
-
-	res = ipa_register_ipa_ready_cb(ipa_ready_callback, (void *)&usb_ops);
-	if (res < 0)
-		IPA_USB_DBG("Failed to register USB ops CB\n");
-	else
-		IPA_USB_DBG("ipa_ready_callback registered\n");
-	return res;
 }

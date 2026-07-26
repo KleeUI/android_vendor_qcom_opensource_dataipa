@@ -191,7 +191,7 @@ int ipa_dmesg_logs_register_each_page(char *region_name)
 	size_t len_out = 0;
 	int index = DMESG_BUF_CHUNKS - 1;
 	int dmesg_buf_len[DMESG_BUF_CHUNKS];
-	struct kmsg_dump_iter k_iter;
+	struct kmsg_dumper k_iter;
 
 	kmsg_dump_rewind(&k_iter);
 	while (index >= 0 && total_size > 0) {

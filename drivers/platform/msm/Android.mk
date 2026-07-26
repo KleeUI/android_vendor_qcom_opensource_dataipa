@@ -25,6 +25,7 @@ LOCAL_CLANG :=true
 
 
 KBUILD_OPTIONS += MODNAME=gsim
+KBUILD_REQUIRED_KOS := rmnet_mem.ko
 LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 LOCAL_MODULE              := gsim.ko
 LOCAL_MODULE_KBUILD_NAME  := gsi/gsim.ko

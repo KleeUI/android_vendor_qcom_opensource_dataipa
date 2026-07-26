@@ -232,7 +232,7 @@ int ipa_opt_log_init(void)
 	mutex_init(&ipa3_opt_log_ctx->opt_log_msg_lock);
 	mutex_init(&ipa3_opt_log_ctx->ctx_lock);
 
-	opt_log_cdev->class = class_create("ipa_events");
+	opt_log_cdev->class = class_create(THIS_MODULE, "ipa_events");
 
 	if (IS_ERR(opt_log_cdev->class)) {
 		IPAERR("Error: opt_log_cdev->class NULL\n");

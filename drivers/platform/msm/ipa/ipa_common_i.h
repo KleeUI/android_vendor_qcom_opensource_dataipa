@@ -30,6 +30,8 @@
 #define IPA_EP_ARR_SIZE 2
 #define IPA_EP_PER_REG 32
 
+struct ipa_wdi_outstanding_buffs;
+
 #define __FILENAME__ \
 	(strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 

@@ -31,7 +31,7 @@
 #include <linux/pci.h>
 #include <linux/sched/clock.h>
 #include <linux/soc/qcom/smem.h>
-#include <linux/firmware/qcom/qcom_scm.h>
+#include <linux/qcom_scm.h>
 #include <asm/cacheflush.h>
 #include <linux/soc/qcom/smem_state.h>
 #include <linux/of_irq.h>
@@ -7718,7 +7718,7 @@ static void ipa3_register_panic_hdlr(void)
 		&ipa3_panic_blk);
 }
 
-static void ipa3_unregister_panic_hdlr(void)
+static void __maybe_unused ipa3_unregister_panic_hdlr(void)
 {
 	atomic_notifier_chain_unregister(&panic_notifier_list,
 		&ipa3_panic_blk);
@@ -9777,7 +9777,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	spin_lock_init(&ipa3_ctx->wc_memb.ipa_tx_mul_spinlock);
 	INIT_LIST_HEAD(&ipa3_ctx->wc_memb.wlan_comm_desc_list);
 
-	ipa3_ctx->cdev.class = class_create(DRV_NAME);
+	ipa3_ctx->cdev.class = class_create(THIS_MODULE, DRV_NAME);
 
 	result = alloc_chrdev_region(&ipa3_ctx->cdev.dev_num, 0, 1, DRV_NAME);
 	if (result) {
@@ -11194,8 +11194,8 @@ static int ipa_smmu_uc_cb_probe(struct device *dev)
 	}
 
 	if (smmu_info.use_64_bit_dma_mask) {
-		if (dma_set_mask(dev, DMA_BIT_MASK(64)) ||
-			dma_set_coherent_mask(dev, DMA_BIT_MASK(64))) {
+		if (dma_set_mask(dev, ~0ULL) ||
+			dma_set_coherent_mask(dev, ~0ULL)) {
 			IPAERR("DMA set 64bit mask failed\n");
 			return -EOPNOTSUPP;
 		}
@@ -11326,8 +11326,8 @@ static int ipa_smmu_ap_cb_probe(struct device *dev)
 	}
 
 	if (smmu_info.use_64_bit_dma_mask) {
-		if (dma_set_mask(dev, DMA_BIT_MASK(64)) ||
-			dma_set_coherent_mask(dev, DMA_BIT_MASK(64))) {
+		if (dma_set_mask(dev, ~0ULL) ||
+			dma_set_coherent_mask(dev, ~0ULL)) {
 			IPAERR("DMA set 64bit mask failed\n");
 			return -EOPNOTSUPP;
 		}
@@ -11890,7 +11890,7 @@ int ipa3_plat_drv_probe(struct platform_device *pdev_p)
 		if (of_property_read_bool(pdev_p->dev.of_node,
 			"qcom,use-64-bit-dma-mask")) {
 			smmu_info.use_64_bit_dma_mask = true;
-			if (dma_set_mask_and_coherent(&pdev_p->dev, DMA_BIT_MASK(64))) {
+			if (dma_set_mask_and_coherent(&pdev_p->dev, ~0ULL)) {
 				IPAERR("DMA set 64bit mask failed\n");
 				return -EOPNOTSUPP;
 			}
@@ -11899,7 +11899,7 @@ int ipa3_plat_drv_probe(struct platform_device *pdev_p)
 	} else {
 		if (of_property_read_bool(pdev_p->dev.of_node,
 			"qcom,use-64-bit-dma-mask")) {
-			if (dma_set_mask_and_coherent(&pdev_p->dev, DMA_BIT_MASK(64))) {
+			if (dma_set_mask_and_coherent(&pdev_p->dev, ~0ULL)) {
 				IPAERR("DMA set 64bit mask failed\n");
 				return -EOPNOTSUPP;
 			}
@@ -12100,7 +12100,6 @@ static void ipa3_deepsleep_resume(void)
 	IPADBG("Entry\n");
 	/*After deeplseep exit we shouldn't allow delete the default routing table*/
 	ipa3_ctx->deepsleep = false;
-	ipa3_usb_register_ready_cb();
 	/*Scheduling WQ to load IPA FW*/
 	queue_work(ipa3_ctx->transport_power_mgmt_wq,
 		&ipa3_fw_loading_work);
@@ -12209,7 +12208,7 @@ int ipa3_iommu_map(struct iommu_domain *domain,
 	if (cb->is_cache_coherent)
 		prot |= IOMMU_CACHE;
 
-    return iommu_map(domain, iova, paddr, size, prot, GFP_ATOMIC);
+    return iommu_map(domain, iova, paddr, size, prot);
 }
 
 /**
