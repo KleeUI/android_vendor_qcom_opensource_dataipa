@@ -719,24 +719,61 @@ static void ipa3_del_low_lat_rt_rule(void)
 	kfree(rt_rule);
 }
 
-static void ipa3_copy_qmi_flt_rule_ex(
+static int ipa3_copy_qmi_flt_rule_ex(
 	struct ipa_ioc_ext_intf_prop *q6_ul_flt_rule_ptr,
-	void *flt_spec_ptr_void)
+	const struct ipa_filter_spec_ex_type_v01 *flt_spec_ptr)
 {
 	int j;
-	struct ipa_filter_spec_ex_type_v01 *flt_spec_ptr;
 	struct ipa_ipfltr_range_eq_16 *q6_ul_filter_nat_ptr;
-	struct ipa_ipfltr_range_eq_16_type_v01 *filter_spec_nat_ptr;
+	const struct ipa_ipfltr_range_eq_16_type_v01 *filter_spec_nat_ptr;
 
-	/*
-	 * pure_ack and tos has the same size and type and we will treat tos
-	 * field as pure_ack in ipa4.5 version
-	 */
-	flt_spec_ptr = (struct ipa_filter_spec_ex_type_v01 *) flt_spec_ptr_void;
+	/* Validate source and destination capacities before copying equations. */
+	if (flt_spec_ptr->filter_rule.num_ihl_offset_range_16 >
+	    ARRAY_SIZE(flt_spec_ptr->filter_rule.ihl_offset_range_16) ||
+	    flt_spec_ptr->filter_rule.num_ihl_offset_range_16 >
+	    ARRAY_SIZE(q6_ul_flt_rule_ptr->eq_attrib.ihl_offset_range_16) ||
+	    flt_spec_ptr->filter_rule.num_offset_meq_32 >
+	    ARRAY_SIZE(flt_spec_ptr->filter_rule.offset_meq_32) ||
+	    flt_spec_ptr->filter_rule.num_offset_meq_32 >
+	    ARRAY_SIZE(q6_ul_flt_rule_ptr->eq_attrib.offset_meq_32) ||
+	    flt_spec_ptr->filter_rule.num_ihl_offset_meq_32 >
+	    ARRAY_SIZE(flt_spec_ptr->filter_rule.ihl_offset_meq_32) ||
+	    flt_spec_ptr->filter_rule.num_ihl_offset_meq_32 >
+	    ARRAY_SIZE(q6_ul_flt_rule_ptr->eq_attrib.ihl_offset_meq_32) ||
+	    flt_spec_ptr->filter_rule.num_offset_meq_128 >
+	    ARRAY_SIZE(flt_spec_ptr->filter_rule.offset_meq_128) ||
+	    flt_spec_ptr->filter_rule.num_offset_meq_128 >
+	    ARRAY_SIZE(q6_ul_flt_rule_ptr->eq_attrib.offset_meq_128))
+		return -EINVAL;
 
-	q6_ul_flt_rule_ptr->ip = (enum ipa_ip_type)flt_spec_ptr->ip_type;
-	q6_ul_flt_rule_ptr->action =
-		(enum ipa_flt_action)flt_spec_ptr->filter_action;
+	/* QMI and IPA use different numeric values for these enums. */
+	switch (flt_spec_ptr->ip_type) {
+	case QMI_IPA_IP_TYPE_V4_V01:
+		q6_ul_flt_rule_ptr->ip = IPA_IP_v4;
+		break;
+	case QMI_IPA_IP_TYPE_V6_V01:
+		q6_ul_flt_rule_ptr->ip = IPA_IP_v6;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	switch (flt_spec_ptr->filter_action) {
+	case QMI_IPA_FILTER_ACTION_SRC_NAT_V01:
+		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_SRC_NAT;
+		break;
+	case QMI_IPA_FILTER_ACTION_DST_NAT_V01:
+		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_DST_NAT;
+		break;
+	case QMI_IPA_FILTER_ACTION_ROUTING_V01:
+		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_ROUTING;
+		break;
+	case QMI_IPA_FILTER_ACTION_EXCEPTION_V01:
+		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_EXCEPTION;
+		break;
+	default:
+		return -EINVAL;
+	}
 	if (flt_spec_ptr->is_routing_table_index_valid == true)
 		q6_ul_flt_rule_ptr->rt_tbl_idx =
 		flt_spec_ptr->route_table_index;
@@ -844,15 +881,92 @@ static void ipa3_copy_qmi_flt_rule_ex(
 		flt_spec_ptr->filter_rule.metadata_meq32.value;
 	q6_ul_flt_rule_ptr->eq_attrib.ipv4_frag_eq_present =
 		flt_spec_ptr->filter_rule.ipv4_frag_eq_present;
+	return 0;
+}
+
+static int ipa3_copy_qmi_flt_rule_ex2(
+	struct ipa_ioc_ext_intf_prop *q6_ul_flt_rule_ptr,
+	const struct ipa_filter_spec_ex2_type_v01 *flt_spec_ptr)
+{
+	const struct ipa_filter_rule_req2_type_v01 *src =
+		&flt_spec_ptr->filter_rule;
+	struct ipa_filter_spec_ex_type_v01 flt_spec = {
+		.ip_type = flt_spec_ptr->ip_type,
+		.filter_action = flt_spec_ptr->filter_action,
+		.is_routing_table_index_valid =
+			flt_spec_ptr->is_routing_table_index_valid,
+		.route_table_index = flt_spec_ptr->route_table_index,
+		.is_mux_id_valid = flt_spec_ptr->is_mux_id_valid,
+		.mux_id = flt_spec_ptr->mux_id,
+		.rule_id = flt_spec_ptr->rule_id,
+		.is_rule_hashable = flt_spec_ptr->is_rule_hashable,
+	};
+	struct ipa_filter_rule_type_v01 *dst = &flt_spec.filter_rule;
+
+	/* Check both typed arrays before normalizing the ex2 equations. */
+	if (src->num_ihl_offset_range_16 >
+	    ARRAY_SIZE(src->ihl_offset_range_16) ||
+	    src->num_ihl_offset_range_16 >
+	    ARRAY_SIZE(dst->ihl_offset_range_16) ||
+	    src->num_offset_meq_32 > ARRAY_SIZE(src->offset_meq_32) ||
+	    src->num_offset_meq_32 > ARRAY_SIZE(dst->offset_meq_32) ||
+	    src->num_ihl_offset_meq_32 > ARRAY_SIZE(src->ihl_offset_meq_32) ||
+	    src->num_ihl_offset_meq_32 > ARRAY_SIZE(dst->ihl_offset_meq_32) ||
+	    src->num_offset_meq_128 > ARRAY_SIZE(src->offset_meq_128) ||
+	    src->num_offset_meq_128 > ARRAY_SIZE(dst->offset_meq_128))
+		return -EINVAL;
+
+	dst->rule_eq_bitmap = src->rule_eq_bitmap;
+	/* IPA 4.5 interprets the legacy TOS slots as pure-ACK equations. */
+	dst->tos_eq_present = src->pure_ack_eq_present;
+	dst->tos_eq = src->pure_ack_eq;
+	dst->protocol_eq_present = src->protocol_eq_present;
+	dst->protocol_eq = src->protocol_eq;
+	dst->num_ihl_offset_range_16 = src->num_ihl_offset_range_16;
+	memcpy(dst->ihl_offset_range_16, src->ihl_offset_range_16,
+		dst->num_ihl_offset_range_16 * sizeof(dst->ihl_offset_range_16[0]));
+	dst->num_offset_meq_32 = src->num_offset_meq_32;
+	memcpy(dst->offset_meq_32, src->offset_meq_32,
+		dst->num_offset_meq_32 * sizeof(dst->offset_meq_32[0]));
+	dst->tc_eq_present = src->tc_eq_present;
+	dst->tc_eq = src->tc_eq;
+	dst->flow_eq_present = src->flow_eq_present;
+	dst->flow_eq = src->flow_eq;
+	dst->ihl_offset_eq_16_present = src->ihl_offset_eq_16_present;
+	dst->ihl_offset_eq_16 = src->ihl_offset_eq_16;
+	dst->ihl_offset_eq_32_present = src->ihl_offset_eq_32_present;
+	dst->ihl_offset_eq_32 = src->ihl_offset_eq_32;
+	dst->num_ihl_offset_meq_32 = src->num_ihl_offset_meq_32;
+	memcpy(dst->ihl_offset_meq_32, src->ihl_offset_meq_32,
+		dst->num_ihl_offset_meq_32 * sizeof(dst->ihl_offset_meq_32[0]));
+	dst->num_offset_meq_128 = src->num_offset_meq_128;
+	memcpy(dst->offset_meq_128, src->offset_meq_128,
+		dst->num_offset_meq_128 * sizeof(dst->offset_meq_128[0]));
+	dst->metadata_meq32_present = src->metadata_meq32_present;
+	dst->metadata_meq32 = src->metadata_meq32;
+	dst->ipv4_frag_eq_present = src->ipv4_frag_eq_present;
+
+	return ipa3_copy_qmi_flt_rule_ex(q6_ul_flt_rule_ptr, &flt_spec);
 }
 
 int ipa3_copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 		*rule_req)
 {
-	int i;
+	int i, rc;
 
 	/* prevent multi-threads accessing rmnet_ipa3_ctx->num_q6_rules */
 	mutex_lock(&rmnet_ipa3_ctx->add_mux_channel_lock);
+	if ((rule_req->filter_spec_ex_list_valid &&
+	     (rule_req->filter_spec_ex_list_len >
+	      ARRAY_SIZE(rule_req->filter_spec_ex_list) ||
+	      rule_req->filter_spec_ex_list_len >
+	      ARRAY_SIZE(ipa3_qmi_ctx->q6_ul_filter_rule))) ||
+	    (rule_req->filter_spec_ex2_list_valid &&
+	     (rule_req->filter_spec_ex2_list_len >
+	      ARRAY_SIZE(rule_req->filter_spec_ex2_list) ||
+	      rule_req->filter_spec_ex2_list_len >
+	      ARRAY_SIZE(ipa3_qmi_ctx->q6_ul_filter_rule))))
+		goto failure;
 	if (rule_req->filter_spec_ex_list_valid == true &&
 		rule_req->filter_spec_ex2_list_valid == false) {
 		rmnet_ipa3_ctx->num_q6_rules =
@@ -872,10 +986,14 @@ int ipa3_copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 			"both ex and ex2 flt rules are set to valid\n");
 		else
 			IPAWANERR("got no UL rules from modem\n");
-		mutex_unlock(
-			&rmnet_ipa3_ctx->add_mux_channel_lock);
-		return -EINVAL;
+		goto failure;
 	}
+
+	/* A new list replaces the cache, including optional per-rule flags. */
+	memset(ipa3_qmi_ctx->q6_ul_filter_rule, 0,
+		sizeof(ipa3_qmi_ctx->q6_ul_filter_rule));
+	ipa3_qmi_ctx->ul_firewall_indices_list_valid = 0;
+	ipa3_qmi_ctx->ul_firewall_indices_list_len = 0;
 
 	/* copy UL filter rules from Modem*/
 	for (i = 0; i < rmnet_ipa3_ctx->num_q6_rules; i++) {
@@ -888,18 +1006,26 @@ int ipa3_copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 			goto failure;
 		}
 		if (rule_req->filter_spec_ex_list_valid == true)
-			ipa3_copy_qmi_flt_rule_ex(
+			rc = ipa3_copy_qmi_flt_rule_ex(
 				&ipa3_qmi_ctx->q6_ul_filter_rule[i],
 				&rule_req->filter_spec_ex_list[i]);
 		else if (rule_req->filter_spec_ex2_list_valid == true)
-			ipa3_copy_qmi_flt_rule_ex(
+			rc = ipa3_copy_qmi_flt_rule_ex2(
 				&ipa3_qmi_ctx->q6_ul_filter_rule[i],
 				&rule_req->filter_spec_ex2_list[i]);
+		else
+			goto failure;
+		if (rc) {
+			IPAWANERR("invalid QMI filter specification\n");
+			goto failure;
+		}
 	}
 
 	if (rule_req->xlat_filter_indices_list_valid) {
 		if (rule_req->xlat_filter_indices_list_len >
-		    rmnet_ipa3_ctx->num_q6_rules) {
+		    rmnet_ipa3_ctx->num_q6_rules ||
+		    rule_req->xlat_filter_indices_list_len >
+		    ARRAY_SIZE(rule_req->xlat_filter_indices_list)) {
 			IPAWANERR("Number of xlat indices is not valid: %d\n",
 					rule_req->xlat_filter_indices_list_len);
 			goto failure;
@@ -931,9 +1057,13 @@ int ipa3_copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 			rule_req->ul_firewall_indices_list_len);
 
 		if (rule_req->ul_firewall_indices_list_len >
-			rmnet_ipa3_ctx->num_q6_rules) {
+			rmnet_ipa3_ctx->num_q6_rules ||
+		    rule_req->ul_firewall_indices_list_len >
+		    ARRAY_SIZE(rule_req->ul_firewall_indices_list) ||
+		    rule_req->ul_firewall_indices_list_len >
+		    ARRAY_SIZE(ipa3_qmi_ctx->ul_firewall_indices_list)) {
 			IPAWANERR("UL rule indices are not valid: (%d/%d)\n",
-					rule_req->xlat_filter_indices_list_len,
+					rule_req->ul_firewall_indices_list_len,
 					rmnet_ipa3_ctx->num_q6_rules);
 			goto failure;
 		}
@@ -964,6 +1094,8 @@ int ipa3_copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 
 failure:
 	rmnet_ipa3_ctx->num_q6_rules = 0;
+	ipa3_qmi_ctx->ul_firewall_indices_list_valid = 0;
+	ipa3_qmi_ctx->ul_firewall_indices_list_len = 0;
 	memset(ipa3_qmi_ctx->q6_ul_filter_rule, 0,
 		sizeof(ipa3_qmi_ctx->q6_ul_filter_rule));
 	mutex_unlock(

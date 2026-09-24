@@ -162,46 +162,44 @@ static void ipa3_handle_install_filter_rule_req(struct qmi_handle *qmi_handle,
 {
 	struct ipa_install_fltr_rule_req_msg_v01 *rule_req;
 	struct ipa_install_fltr_rule_resp_msg_v01 resp;
-	uint32_t rule_hdl[MAX_NUM_Q6_RULE];
 	int rc = 0, i;
 
 	rule_req = (struct ipa_install_fltr_rule_req_msg_v01 *)decoded_msg;
-	memset(rule_hdl, 0, sizeof(rule_hdl));
 	memset(&resp, 0, sizeof(struct ipa_install_fltr_rule_resp_msg_v01));
 	IPAWANDBG("Received install filter Request\n");
 
-	rc = ipa3_copy_ul_filter_rule_to_ipa((struct
-		ipa_install_fltr_rule_req_msg_v01*)decoded_msg);
+	/* Do not accept a list whose rule IDs cannot fit in the response. */
+	if ((rule_req->filter_spec_ex_list_valid &&
+	     rule_req->filter_spec_ex_list_len > ARRAY_SIZE(resp.rule_id)) ||
+	    (rule_req->filter_spec_ex2_list_valid &&
+	     rule_req->filter_spec_ex2_list_len > ARRAY_SIZE(resp.rule_id)))
+		rc = -EINVAL;
+	else
+		rc = ipa3_copy_ul_filter_rule_to_ipa(rule_req);
 
 	if (rc) {
 		IPAWANERR("copy UL rules from modem is failed\n");
-		return;
+		resp.resp.result = IPA_QMI_RESULT_FAILURE_V01;
+		resp.resp.error = IPA_QMI_ERR_MALFORMED_MSG_V01;
+		goto send_response;
 	}
 
 	resp.resp.result = IPA_QMI_RESULT_SUCCESS_V01;
+	resp.resp.error = IPA_QMI_ERR_NONE_V01;
+	resp.rule_id_valid = 1;
 	if (rule_req->filter_spec_ex_list_valid == true) {
-		resp.rule_id_valid = 1;
-		if (rule_req->filter_spec_ex_list_len > MAX_NUM_Q6_RULE) {
-			resp.rule_id_len = MAX_NUM_Q6_RULE;
-			IPAWANERR("installed (%d) max Q6-UL rules ",
-			MAX_NUM_Q6_RULE);
-			IPAWANERR("but modem gives total (%u)\n",
-			rule_req->filter_spec_ex_list_len);
-		} else {
-			resp.rule_id_len =
-				rule_req->filter_spec_ex_list_len;
-		}
+		resp.rule_id_len = rule_req->filter_spec_ex_list_len;
+		for (i = 0; i < resp.rule_id_len; i++)
+			resp.rule_id[i] =
+				rule_req->filter_spec_ex_list[i].rule_id;
 	} else {
-		resp.rule_id_valid = 0;
-		resp.rule_id_len = 0;
+		resp.rule_id_len = rule_req->filter_spec_ex2_list_len;
+		for (i = 0; i < resp.rule_id_len; i++)
+			resp.rule_id[i] =
+				rule_req->filter_spec_ex2_list[i].rule_id;
 	}
 
-	/* construct UL filter rules response to Modem*/
-	for (i = 0; i < resp.rule_id_len; i++) {
-		resp.rule_id[i] =
-			rule_req->filter_spec_ex_list[i].rule_id;
-	}
-
+send_response:
 	IPAWANDBG("qmi_snd_rsp: result %d, err %d\n",
 		resp.resp.result, resp.resp.error);
 	rc = qmi_send_response(qmi_handle, sq, txn,
@@ -2638,4 +2636,3 @@ void ipa3_qmi_cleanup(void)
 {
 	mutex_destroy(&ipa3_qmi_lock);
 }
-
