@@ -743,8 +743,14 @@ static int ipa3_copy_qmi_flt_rule_ex(
 	    flt_spec_ptr->filter_rule.num_offset_meq_128 >
 	    ARRAY_SIZE(flt_spec_ptr->filter_rule.offset_meq_128) ||
 	    flt_spec_ptr->filter_rule.num_offset_meq_128 >
-	    ARRAY_SIZE(q6_ul_flt_rule_ptr->eq_attrib.offset_meq_128))
+	    ARRAY_SIZE(q6_ul_flt_rule_ptr->eq_attrib.offset_meq_128)) {
+		IPAWANERR("QMI reject ex-counts range16=%u meq32=%u ihl32=%u meq128=%u\n",
+			flt_spec_ptr->filter_rule.num_ihl_offset_range_16,
+			flt_spec_ptr->filter_rule.num_offset_meq_32,
+			flt_spec_ptr->filter_rule.num_ihl_offset_meq_32,
+			flt_spec_ptr->filter_rule.num_offset_meq_128);
 		return -EINVAL;
+	}
 
 	/* QMI and IPA use different numeric values for these enums. */
 	switch (flt_spec_ptr->ip_type) {
@@ -755,6 +761,8 @@ static int ipa3_copy_qmi_flt_rule_ex(
 		q6_ul_flt_rule_ptr->ip = IPA_IP_v6;
 		break;
 	default:
+		IPAWANERR("QMI reject ip-type=%d\n",
+			(int)flt_spec_ptr->ip_type);
 		return -EINVAL;
 	}
 
@@ -772,6 +780,8 @@ static int ipa3_copy_qmi_flt_rule_ex(
 		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_EXCEPTION;
 		break;
 	default:
+		IPAWANERR("QMI reject action=%d\n",
+			(int)flt_spec_ptr->filter_action);
 		return -EINVAL;
 	}
 	if (flt_spec_ptr->is_routing_table_index_valid == true)
@@ -913,8 +923,12 @@ static int ipa3_copy_qmi_flt_rule_ex2(
 	    src->num_ihl_offset_meq_32 > ARRAY_SIZE(src->ihl_offset_meq_32) ||
 	    src->num_ihl_offset_meq_32 > ARRAY_SIZE(dst->ihl_offset_meq_32) ||
 	    src->num_offset_meq_128 > ARRAY_SIZE(src->offset_meq_128) ||
-	    src->num_offset_meq_128 > ARRAY_SIZE(dst->offset_meq_128))
+	    src->num_offset_meq_128 > ARRAY_SIZE(dst->offset_meq_128)) {
+		IPAWANERR("QMI reject ex2-counts range16=%u meq32=%u ihl32=%u meq128=%u\n",
+			src->num_ihl_offset_range_16, src->num_offset_meq_32,
+			src->num_ihl_offset_meq_32, src->num_offset_meq_128);
 		return -EINVAL;
+	}
 
 	dst->rule_eq_bitmap = src->rule_eq_bitmap;
 	/* IPA 4.5 interprets the legacy TOS slots as pure-ACK equations. */
@@ -1016,7 +1030,9 @@ int ipa3_copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 		else
 			goto failure;
 		if (rc) {
-			IPAWANERR("invalid QMI filter specification\n");
+			IPAWANERR("invalid QMI filter specification index=%d kind=%s rc=%d\n",
+				i, rule_req->filter_spec_ex2_list_valid ? "ex2" : "ex",
+				rc);
 			goto failure;
 		}
 	}
