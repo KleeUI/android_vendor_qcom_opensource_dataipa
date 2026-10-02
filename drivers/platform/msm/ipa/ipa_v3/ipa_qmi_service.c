@@ -18,6 +18,7 @@
 
 #include "ipa_qmi_service.h"
 #include "ipa_mhi_proxy.h"
+#include "ipa_wire_guard.h"
 
 #define IPA_Q6_SVC_VERS 1
 #define IPA_A5_SVC_VERS 1
@@ -1908,7 +1909,105 @@ static void ipa3_q6_clnt_svc_event_notify_svc_exit(struct qmi_handle *qmi,
 			&ipa3_work_svc_exit, 0);
 }
 
+/* The receive work item serializes this server's incoming datagrams. */
+static struct qmi_msg_handler server_handlers[];
+
+static void ipa3_reject_incomplete_filter(struct qmi_handle *qmi,
+	struct sockaddr_qrtr *sq, struct qmi_txn *txn)
+{
+	struct ipa_install_fltr_rule_resp_msg_v01 resp = { 0 };
+	int rc;
+
+	resp.resp.result = IPA_QMI_RESULT_FAILURE_V01;
+	resp.resp.error = IPA_QMI_ERR_MALFORMED_MSG_V01;
+	rc = qmi_send_response(qmi, sq, txn,
+		QMI_IPA_INSTALL_FILTER_RULE_RESP_V01,
+		QMI_IPA_INSTALL_FILTER_RULE_RESP_MAX_MSG_LEN_V01,
+		ipa3_install_fltr_rule_resp_msg_data_v01_ei, &resp);
+	if (rc < 0)
+		IPAWANERR("incomplete filter response failed rc=%d\n", rc);
+}
+
+/* Keep the kernel codec and original request callbacks. For INSTALL_FILTER
+ * only, inspect the actual datagram length before decoding and verify that
+ * every known TLV survives decode/re-encode without omission or substitution.
+ * This server originates responses/indications, never request transactions.
+ */
+static void ipa3_server_receive_checked(struct qmi_handle *qmi,
+	struct sockaddr_qrtr *sq, const void *data, size_t count)
+{
+	const struct qmi_header *hdr = data;
+	const struct qmi_msg_handler *handler;
+	struct qmi_txn txn = { 0 };
+	struct ipa_install_fltr_rule_req_msg_v01 *req;
+	void *decoded, *encoded;
+	size_t encoded_len;
+	bool install;
+	int rc;
+
+	if (!data || count < sizeof(*hdr) || hdr->type != QMI_REQUEST)
+		return;
+	for (handler = server_handlers; handler->fn; handler++)
+		if (handler->type == hdr->type && handler->msg_id == hdr->msg_id)
+			break;
+	if (!handler->fn || !handler->decoded_size)
+		return;
+	txn.id = hdr->txn_id;
+	install = hdr->msg_id == QMI_IPA_INSTALL_FILTER_RULE_REQ_V01;
+	if (install) {
+		rc = ipa_qmi_wire_validate(data, count, handler->ei);
+		if (rc)
+			goto malformed;
+	}
+	decoded = kzalloc(handler->decoded_size, GFP_KERNEL);
+	if (!decoded)
+		return;
+	rc = qmi_decode_message(data, count, handler->ei, decoded);
+	if (rc < 0)
+		goto free_decoded;
+	if (install) {
+		if (rc != count - sizeof(*hdr)) {
+			rc = -EINVAL;
+			goto free_decoded;
+		}
+		encoded_len = QMI_IPA_INSTALL_FILTER_RULE_REQ_MAX_MSG_LEN_V01;
+		encoded = qmi_encode_message(hdr->type, hdr->msg_id,
+			&encoded_len, hdr->txn_id, handler->ei, decoded);
+		if (IS_ERR(encoded)) {
+			rc = PTR_ERR(encoded);
+			goto free_decoded;
+		}
+		rc = ipa_qmi_wire_equal(data, count, encoded, encoded_len, handler->ei);
+		kfree(encoded);
+		if (rc)
+			goto free_decoded;
+		req = decoded;
+		if (req->filter_spec_ex_list_valid && req->filter_spec_ex_list_len)
+			IPAWANERR("complete filter ex count=%u ip=%d action=%d\n",
+				req->filter_spec_ex_list_len, req->filter_spec_ex_list[0].ip_type,
+				req->filter_spec_ex_list[0].filter_action);
+		if (req->filter_spec_ex2_list_valid && req->filter_spec_ex2_list_len)
+			IPAWANERR("complete filter ex2 count=%u ip=%d action=%d\n",
+				req->filter_spec_ex2_list_len, req->filter_spec_ex2_list[0].ip_type,
+				req->filter_spec_ex2_list[0].filter_action);
+	}
+	handler->fn(qmi, sq, &txn, decoded);
+	kfree(decoded);
+	return;
+
+free_decoded:
+	kfree(decoded);
+	if (!install) {
+		IPAWANERR("failed to decode server request rc=%d\n", rc);
+		return;
+	}
+malformed:
+	IPAWANERR("incomplete filter wire rejected bytes=%zu rc=%d\n", count, rc);
+	ipa3_reject_incomplete_filter(qmi, sq, &txn);
+}
+
 static struct qmi_ops server_ops = {
+	.msg_handler = ipa3_server_receive_checked,
 	.del_client = ipa3_a5_svc_disconnect_cb,
 };
 
