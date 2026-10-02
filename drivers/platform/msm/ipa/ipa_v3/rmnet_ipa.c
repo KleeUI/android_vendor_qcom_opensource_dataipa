@@ -752,13 +752,17 @@ static int ipa3_copy_qmi_flt_rule_ex(
 		return -EINVAL;
 	}
 
-	/* QMI and IPA use different numeric values for these enums. */
-	switch (flt_spec_ptr->ip_type) {
-	case QMI_IPA_IP_TYPE_V4_V01:
-		q6_ul_flt_rule_ptr->ip = IPA_IP_v4;
-		break;
-	case QMI_IPA_IP_TYPE_V6_V01:
-		q6_ul_flt_rule_ptr->ip = IPA_IP_v6;
+	/*
+	 * Inbound modem ex/ex2 rules preserve native IPA enum numbering,
+	 * as in the reference converter. Do not apply the legacy outgoing
+	 * QMI enum translation here: IP value 1 is native IPv6, not IPv4.
+	 * Accept only the destination domain; never alias both conventions.
+	 */
+	switch ((int)flt_spec_ptr->ip_type) {
+	case IPA_IP_v4:
+	case IPA_IP_v6:
+		q6_ul_flt_rule_ptr->ip =
+			(enum ipa_ip_type)flt_spec_ptr->ip_type;
 		break;
 	default:
 		IPAWANERR("QMI reject ip-type=%d\n",
@@ -766,18 +770,13 @@ static int ipa3_copy_qmi_flt_rule_ex(
 		return -EINVAL;
 	}
 
-	switch (flt_spec_ptr->filter_action) {
-	case QMI_IPA_FILTER_ACTION_SRC_NAT_V01:
-		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_SRC_NAT;
-		break;
-	case QMI_IPA_FILTER_ACTION_DST_NAT_V01:
-		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_DST_NAT;
-		break;
-	case QMI_IPA_FILTER_ACTION_ROUTING_V01:
-		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_ROUTING;
-		break;
-	case QMI_IPA_FILTER_ACTION_EXCEPTION_V01:
-		q6_ul_flt_rule_ptr->action = IPA_PASS_TO_EXCEPTION;
+	switch ((int)flt_spec_ptr->filter_action) {
+	case IPA_PASS_TO_ROUTING:
+	case IPA_PASS_TO_SRC_NAT:
+	case IPA_PASS_TO_DST_NAT:
+	case IPA_PASS_TO_EXCEPTION:
+		q6_ul_flt_rule_ptr->action =
+			(enum ipa_flt_action)flt_spec_ptr->filter_action;
 		break;
 	default:
 		IPAWANERR("QMI reject action=%d\n",
